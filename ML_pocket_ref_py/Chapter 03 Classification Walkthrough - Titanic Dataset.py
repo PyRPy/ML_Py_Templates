@@ -7,7 +7,10 @@
 # Chapter 3 Classification Walkthrough - Titanic Dataset
 
 
-# In[ ]:
+# # Import
+
+# In[1]:
+
 
 
 import matplotlib.pyplot as plt
@@ -30,7 +33,7 @@ from sklearn.model_selection import (
 )
 
 
-# In[39]:
+# In[2]:
 
 
 import warnings
@@ -49,14 +52,18 @@ from yellowbrick.model_selection import (
 )
 
 
-# In[9]:
+# In[6]:
 
 
-df = pd.read_excel("titanic3.xlsx")
+# define the question to answer
+# inspect data
+df = pd.read_excel("Data/titanic3.xlsx")
 orig_df = df
 
 
-# In[10]:
+# # Clean data
+
+# In[7]:
 
 
 df.dtypes
@@ -74,47 +81,49 @@ df.shape
 df.describe().iloc[:, :2]
 
 
-# In[14]:
+# In[8]:
 
 
 df.isnull().sum()
 
 
-# In[15]:
+# In[9]:
 
 
 df.isnull().sum(axis=1).loc[:10]
 
 
-# In[16]:
+# In[10]:
 
 
 mask = df.isnull().any(axis=1)
 
 
-# In[17]:
+# In[11]:
 
 
 mask.head()  # rows
 
 
-# In[18]:
+# In[12]:
 
 
 df[mask].body.head()
 
 
-# In[19]:
+# In[13]:
 
 
 df.sex.value_counts(dropna=False)
 
 
-# In[20]:
+# In[14]:
 
 
 df.embarked.value_counts(dropna=False)
 
+
+# # Create features
 
 # In[21]:
 
@@ -123,7 +132,7 @@ name = df.name
 name.head(3)
 
 
-# In[22]:
+# In[15]:
 
 
 df = df.drop(
@@ -138,59 +147,53 @@ df = df.drop(
 )
 
 
-# In[23]:
+# In[17]:
 
 
 df = pd.get_dummies(df)
 
 
-# In[24]:
+# In[18]:
 
 
 df.columns
 
 
-# In[25]:
+# In[19]:
 
 
 df = df.drop(columns="sex_male")
 
 
-# In[26]:
+# In[20]:
 
 
 df = pd.get_dummies(df, drop_first=True)
 
 
-# In[27]:
+# In[21]:
 
 
 df.columns
 
 
-# In[28]:
+# In[22]:
 
 
 y = df.survived
 X = df.drop(columns="survived")
 
 
-# In[34]:
+# In[24]:
 
 
-import janitor as jn
+# import janitor as jn
 
 
-# In[32]:
+# # Sample data
 
+# In[28]:
 
-import janitor as jn
-X, y = jn.get_features_targets(
-    df, target_columns="survived"
-)
-
-
-# In[35]:
 
 
 X_train, X_test, y_train, y_test = model_selection.train_test_split(
@@ -198,13 +201,15 @@ X_train, X_test, y_train, y_test = model_selection.train_test_split(
 )
 
 
-# In[36]:
+# In[29]:
 
 
 X_train.columns
 
 
-# In[37]:
+# # Impute data
+
+# In[31]:
 
 
 from sklearn.experimental import (
@@ -221,7 +226,7 @@ num_cols = [
 ]
 
 
-# In[40]:
+# In[32]:
 
 
 imputer = impute.IterativeImputer()
@@ -233,7 +238,7 @@ imputed = imputer.transform(X_test[num_cols])
 X_test.loc[:, num_cols] = imputed
 
 
-# In[41]:
+# In[33]:
 
 
 meds = X_train.median()
@@ -241,17 +246,19 @@ X_train = X_train.fillna(meds)
 X_test = X_test.fillna(meds)
 
 
-# In[42]:
+# In[35]:
 
 
 num_cols
 
 
-# In[43]:
+# In[36]:
 
 
 X_train.shape
 
+
+# # Normalize data
 
 # In[44]:
 
@@ -265,7 +272,9 @@ X_test = sca.transform(X_test)
 X_test = pd.DataFrame(X_test, columns=cols)
 
 
-# In[45]:
+# # Refactor
+
+# In[37]:
 
 
 def tweak_titanic(df):
@@ -282,7 +291,7 @@ def tweak_titanic(df):
     return df
 
 
-# In[46]:
+# In[38]:
 
 
 def get_train_test_X_y(
@@ -323,7 +332,7 @@ def get_train_test_X_y(
     return X_train, X_test, y_train, y_test
 
 
-# In[47]:
+# In[39]:
 
 
 ti_df = tweak_titanic(orig_df)
@@ -333,7 +342,9 @@ X_train, X_test, y_train, y_test = get_train_test_X_y(
 )
 
 
-# In[48]:
+# # Baseline model
+
+# In[40]:
 
 
 from sklearn.dummy import DummyClassifier
@@ -342,7 +353,7 @@ bm.fit(X_train, y_train)
 bm.score(X_test, y_test)  # accuracy
 
 
-# In[49]:
+# In[41]:
 
 
 from sklearn import metrics
@@ -351,7 +362,9 @@ metrics.precision_score(
 )
 
 
-# In[51]:
+# # Various families
+
+# In[42]:
 
 
 X = pd.concat([X_train, X_test])
@@ -373,7 +386,7 @@ from sklearn.ensemble import (
 import xgboost
 
 
-# In[52]:
+# In[43]:
 
 
 for model in [
@@ -399,7 +412,11 @@ for model in [
     )
 
 
-# In[59]:
+# # Stacking - not able to install
+
+# # Create model
+
+# In[45]:
 
 
 rf = ensemble.RandomForestClassifier(
@@ -408,13 +425,15 @@ rf = ensemble.RandomForestClassifier(
 rf.fit(X_train, y_train)
 
 
+# # Evaluate model
+
 # In[60]:
 
 
 rf.score(X_test, y_test)
 
 
-# In[61]:
+# In[46]:
 
 
 metrics.precision_score(
@@ -422,7 +441,7 @@ metrics.precision_score(
 )
 
 
-# In[62]:
+# In[47]:
 
 
 for col, val in sorted(
@@ -436,7 +455,9 @@ for col, val in sorted(
     print(f"{col:10}{val:10.3f}")
 
 
-# In[63]:
+# # Optimize model
+
+# In[48]:
 
 
 rf4 = ensemble.RandomForestClassifier()
@@ -452,7 +473,7 @@ cv = model_selection.GridSearchCV(
 print(cv.best_params_)
 
 
-# In[64]:
+# In[49]:
 
 
 rf5 = ensemble.RandomForestClassifier(
@@ -467,7 +488,9 @@ rf5.fit(X_train, y_train)
 rf5.score(X_test, y_test)
 
 
-# In[65]:
+# # Confusion matrix
+
+# In[50]:
 
 
 from sklearn.metrics import confusion_matrix
@@ -475,7 +498,7 @@ y_pred = rf5.predict(X_test)
 confusion_matrix(y_test, y_pred)
 
 
-# In[66]:
+# In[51]:
 
 
 mapping = {0: "died", 1: "survived"}
@@ -489,14 +512,16 @@ cm_viz.score(X_test, y_test)
 cm_viz.poof()
 
 
-# In[67]:
+# # ROC curve
+
+# In[52]:
 
 
 y_pred = rf5.predict(X_test)
 roc_auc_score(y_test, y_pred)
 
 
-# In[68]:
+# In[53]:
 
 
 fig, ax = plt.subplots(figsize=(6, 6))
@@ -505,7 +530,9 @@ roc_viz.score(X_test, y_test)
 roc_viz.poof()
 
 
-# In[69]:
+# # Learning curve
+
+# In[54]:
 
 
 import numpy as np
@@ -524,7 +551,9 @@ lc_viz.fit(X, y)
 lc_viz.poof()
 
 
-# In[70]:
+# # Deploy model
+
+# In[55]:
 
 
 import pickle
