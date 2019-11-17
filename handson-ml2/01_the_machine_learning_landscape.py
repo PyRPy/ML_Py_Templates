@@ -68,27 +68,3 @@ from sklearn.ensemble import RandomForestRegressor
 rfr = RandomForestRegressor(random_state=42, n_estimators=100)
 rfr.fit(X, y)
 rfr.score(X, y)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
