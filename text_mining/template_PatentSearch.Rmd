@@ -1,0 +1,322 @@
+---
+title: "template_PatentSearch"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Reference :
+https://www.r-bloggers.com/accessing-patent-data-with-the-patentsview-package/amp/
+
+### query
+```{r}
+library(patentsview)
+library(tidyverse)
+library(RColorBrewer)
+```
+```{r}
+# Your query has to use the PatentsView query language, which is a JSON-based syntax 
+qry_1 <- '{"_gt":{"patent_year":2007}}'
+search_pv(query = qry_1, fields = NULL)
+```
+* Or you can use the domain specific language (DSL) provided in the
+patentsview package to help you write the query:
+```{r}
+qry_2 <- qry_funs$gt(patent_year = 2007)
+qry_2
+search_pv(query = qry_2)
+```
+### fields
+```{r}
+search_pv(
+  query = qry_funs$gt(patent_year = 2017),
+  fields = c("patent_abstract", "patent_average_processing_time",
+             "inventor_first_name", "inventor_total_num_patents")
+)
+```
+* The fields that you can retrieve depends on the endpoint that you are
+hitting. We've been using the "patents" endpoint thus far, so all of
+these are retrievable:
+```{r}
+search_pv(
+  query = qry_funs$gt(patent_year = 2007),
+  fields = get_fields(endpoint = "patents", groups = c("patents", "inventors"))
+)
+```
+## Example
+* Patents in this area relate to "network architectures or network
+communication protocols for separating internal from external
+traffic." 
+
+### Download the data
+```{r}
+# Write a query:
+query <- with_qfuns( # with_qfuns is basically just: with(qry_funs, ...)
+  and(
+    begins(cpc_subgroup_id = 'H04L63/02'),
+    gte(patent_year = 2007)
+  )
+)
+
+# Create a list of fields:
+fields <- c(
+  c("patent_number", "patent_year"),
+  get_fields(endpoint = "patents", groups = c("assignees", "cpcs"))
+)
+```
+```{r}
+# Send HTTP request to API's server:
+pv_res <- search_pv(query = query, fields = fields, all_pages = TRUE)
+```
+### See where the patents are coming from (geographically)
+```{r}
+library(leaflet)
+library(htmltools)
+library(dplyr)
+library(tidyr)
+```
+```{r}
+data <-
+  pv_res$data$patents %>%
+    unnest(assignees) %>%
+    select(assignee_id, assignee_organization, patent_number,
+           assignee_longitude, assignee_latitude) %>%
+    group_by_at(vars(-matches("pat"))) %>%
+    mutate(num_pats = n()) %>%
+    ungroup() %>%
+    select(-patent_number) %>%
+    distinct() %>%
+    mutate(popup = paste0("< color='Black'>",
+                          htmlEscape(assignee_organization), "<br><br>Patents:",
+                          num_pats, "<>")) %>%
+    mutate_at(vars(matches("_l")), as.numeric) %>%
+    filter(!is.na(assignee_id))
+```
+```{r}
+leaflet(data) %>%
+  addProviderTiles(providers$CartoDB.DarkMatterNoLabels) %>%
+  addCircleMarkers(lng = ~assignee_longitude, lat = ~assignee_latitude,
+                   popup = ~popup, ~sqrt(num_pats), color = "yellow")
+```
+### Plot the growth of the field's topics over time
+```{r}
+data <-
+  pv_res$data$patents %>%
+    unnest(cpcs) %>%
+    filter(cpc_subgroup_id != "H04L63/02") %>% # remove patents categorized into only top-level category of H04L63/02
+    mutate(
+      title = case_when(
+        grepl("filtering", .$cpc_subgroup_title, ignore.case = T) ~
+          "Filtering policies",
+        .$cpc_subgroup_id %in% c("H04L63/0209", "H04L63/0218") ~
+          "Architectural arrangements",
+        grepl("Firewall traversal", .$cpc_subgroup_title, ignore.case = T) ~
+          "Firewall traversal",
+        TRUE ~
+          .$cpc_subgroup_title
+      )
+    ) %>%
+    mutate(title = gsub(".*(?=-)-", "", title, perl = TRUE)) %>%
+    group_by(title, patent_year) %>%
+    count() %>%
+    ungroup() %>%
+    mutate(patent_year = as.numeric(patent_year))
+
+ggplot(data = data) +
+  geom_smooth(aes(x = patent_year, y = n, colour = title), se = FALSE) +
+  scale_x_continuous("\nPublication year", limits = c(2007, 2016),
+                     breaks = 2007:2016) +
+  scale_y_continuous("Patents\n", limits = c(0, 700)) +
+  scale_colour_manual("", values = brewer.pal(5, "Set2")) +
+  theme_bw() + # theme inspired by https://hrbrmstr.github.io/hrbrthemes/
+  theme(panel.border = element_blank(), axis.ticks = element_blank())
+```
+# Following examples are from :
+https://ropensci.github.io/patentsview/articles/examples.html
+
+### Patents endpoint
+```{r}
+library(patentsview)
+# Which patents have been cited by more than 500 US patents?
+search_pv(query = qry_funs$gt(patent_num_cited_by_us_patents = 500))
+```
+```{r}
+# How many distinct inventors are represented by these highly-cited patents?
+# Setting subent_cnts = TRUE will give us the subentity counts. Since inventors 
+# are subentities for the patents endpoint, this means we will get their counts.
+search_pv(
+  query = qry_funs$gt(patent_num_cited_by_us_patents = 500),
+  fields = c("patent_number", "inventor_id"), 
+  subent_cnts = TRUE
+)
+
+```
+```{r}
+# Where geographically have Microsoft inventors been coming from over the past 20 years?
+# Write the query
+query <- with_qfuns(
+  and(
+    gte(patent_date = "2007-07-25"), # Dates are in yyyy-mm-dd format 
+    contains(assignee_organization = "microsoft")
+  )
+)
+
+# Create a field list
+inv_fields <- get_fields(endpoint = "patents", groups = "inventors")
+fields <- c(inv_fields, "patent_number")
+
+# Pull the data
+pv_out <- search_pv(query, fields = fields, all_pages = TRUE)
+
+# Unnest the inventor list column
+unnest_pv_data(pv_out$data, "patent_number")
+```
+### Inventors endpoint
+```{r}
+# Which inventors have Chicago, IL listed as their location on at least one patent
+search_pv(
+  query = '{"_and":[{"location_city":"Chicago"},{"location_state":"IL"}]}',
+  endpoint = "inventors"
+)
+```
+### Assignees endpoint
+```{r}
+# Which assignees have an interest in beer?
+search_pv(
+  query = qry_funs$text_phrase(patent_title = "beer"), 
+  endpoint = "assignees"
+)
+```
+## Getting started
+### A basic example
+https://ropensci.github.io/patentsview/articles/getting-started.html
+```{r}
+library(patentsview)
+
+search_pv(
+  query = '{"_gte":{"patent_date":"2007-01-01"}}',
+  endpoint = "patents"
+)
+
+```
+### Writing queries
+```{r}
+qry_funs$gte(patent_date = "2007-01-01")
+```
+```{r}
+with_qfuns(
+  and(
+    gte(patent_date = "2007-01-01"),
+    text_phrase(patent_abstract = c("computer program", "dog leash"))
+  )
+)
+```
+### Fields
+```{r}
+search_pv(
+  query = '{"_gte":{"patent_date":"2007-01-01"}}',
+  fields = c("patent_number", "patent_title")
+)
+```
+* To list all of the retrievable fields for a given endpoint, use get_fields():
+```{r}
+retrvble_flds <- get_fields(endpoint = "patents")
+head(retrvble_flds)
+```
+### Paginated responses
+```{r}
+search_pv(
+  query = qry_funs$eq(inventor_last_name = "chambers"),
+  page = 2, per_page = 150 # gets records 150 - 300
+) 
+#>
+```
+* You can download all pages of output in one call by setting all_pages = TRUE. 
+```{r}
+search_pv(
+  query = qry_funs$eq(inventor_last_name = "chambers"),
+  all_pages = TRUE
+)
+```
+### 7 endpoints for 7 entities
+```{r}
+query <- qry_funs$eq(inventor_last_name = "chambers")
+fields <- c("patent_number", "inventor_last_name", "assignee_organization")
+
+# Here we are using the patents endpoint:
+search_pv(query, endpoint = "patents", fields = fields)
+```
+```{r}
+# While here we are using the assignees endpoint:
+search_pv(query, endpoint = "assignees", fields = fields)
+```
+### Casting fields
+```{r}
+res <- search_pv(
+  query = "{\"patent_number\":\"5116621\"}", 
+  fields = c("patent_date", "patent_title", "patent_year")
+)
+
+res
+```
+```{r}
+# Use more appropriate data types:
+cast_pv_data(res$data)
+```
+### FAQs
+```{r}
+query <- with_qfuns(text_any(patent_abstract = 'tool animal'))
+```
+```{r}
+query_1a <- with_qfuns(
+  and(
+    text_any(patent_abstract = 'tool animal'),
+    lte(patent_date = "2010-01-01")
+  )
+)
+
+query_1b <- with_qfuns(
+  and(
+    text_any(patent_abstract = 'tool animal'),
+    gt(patent_date = "2010-01-01")
+  )
+)
+```
+* How do I access the data frames inside the list columns returned by search_pv()?
+```{r}
+# Create field list
+asgn_flds <- c("assignee_id", "assignee_organization")
+subent_flds <- get_fields("assignees", c("applications", "gov_interests"))
+fields <- c(asgn_flds, subent_flds)
+
+# Pull data
+res <- search_pv(
+  query = qry_funs$contains(inventor_last_name = "smith"), 
+  endpoint = "assignees", 
+  fields = fields
+)
+res$data
+```
+* res$data has vector columns for those fields that belong to the primary entity (e.g., res$data$assignees$assignee_id) and list columns for those fields that belong to any secondary entity (e.g., res$data$assignees$applications). You have two good ways to pull out the data frames that are nested inside these list columns:
+
+* Use tidyr::unnest. (This is probably the easier choice of the two).
+```{r}
+library(tidyr)
+
+# Get assignee/application data:
+res$data$assignees %>% 
+  unnest(applications) %>%
+  head()
+```
+```{r}
+# Get assignee/gov_interest data:
+res$data$assignees %>% 
+  unnest(gov_interests) %>%
+  head()
+```
+* Use patentsview::unnest_pv_data. unnest_pv_data() creates a series of data frames (one for each entity level) that are like tables in a relational database. You provide it with the data returned by search_pv() and a field that can act as a unique identifier for the primary entities:
+```{r}
+unnest_pv_data(data = res$data, pk = "assignee_id")
+```
+
